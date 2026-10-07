@@ -1,0 +1,132 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the barbershop app",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "client", "barber"] },
+        "avatar": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "locationName": { "type": "string" },
+        "coordinates": { "type": "object" },
+        "availableTimes": { "type": "array" },
+        "availableDays": { "type": "array" },
+        "workingHours": { "type": "object" },
+        "blockedDates": { "type": "array" },
+        "fcmToken": { "type": "string" }
+      },
+      "required": ["name", "email", "role"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "A service offered by the barbershop",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "durationMinutes": { "type": "number" },
+        "icon": { "type": "string" }
+      },
+      "required": ["name", "price", "durationMinutes", "icon"]
+    },
+    "Barber": {
+      "title": "Barber",
+      "description": "A professional barber",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "rating": { "type": "number" },
+        "specialty": { "type": "string" },
+        "reviewCount": { "type": "number" },
+        "locationName": { "type": "string" },
+        "coordinates": { "type": "object" },
+        "availableTimes": { "type": "array" },
+        "availableDays": { "type": "array" },
+        "workingHours": { "type": "object" },
+        "blockedDates": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "avatar", "rating", "specialty"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "A booking made by a user",
+      "type": "object",
+      "properties": {
+        "serviceId": { "type": "string" },
+        "barberId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "barberAvatar": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["upcoming", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "chatInitiated": { "type": "boolean" },
+        "rating": { "type": "number" },
+        "review": { "type": "string" }
+      },
+      "required": ["serviceId", "barberId", "userId", "date", "status"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message between client and barber",
+      "type": "object",
+      "properties": {
+        "appointmentId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["appointmentId", "senderId", "text"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string", "enum": ["chat_started", "new_message", "appointment_created", "appointment_reminder", "system"] },
+        "relatedId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "body", "type", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" },
+      "description": "Available services"
+    },
+    "/barbers/{barberId}": {
+      "schema": { "$ref": "#/entities/Barber" },
+      "description": "Barbers"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Appointments"
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Chat messages"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "In-app notifications"
+    }
+  }
+}

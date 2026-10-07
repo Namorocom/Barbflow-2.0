@@ -1,0 +1,329 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - name: string (required, max 50 chars)
+//   - email: string (required, valid email)
+//   - phone: string (optional, max 20 chars)
+//   - role: string (required, 'admin' or 'client', immutable for clients)
+//   - avatar: string (optional, valid URL)
+//
+// Collection: services
+// Document ID: {serviceId}
+// Fields:
+//   - name: string (required, max 50 chars)
+//   - description: string (optional, max 500 chars)
+//   - price: number (required, positive)
+//   - durationMinutes: number (required, positive)
+//   - icon: string (required, max 50 chars)
+//
+// Collection: barbers
+// Document ID: {barberId}
+// Fields:
+//   - name: string (required, max 50 chars)
+//   - avatar: string (required, valid URL)
+//   - rating: number (required, 0 to 5)
+//   - specialty: string (required, max 100 chars)
+//
+// Collection: appointments
+// Document ID: {appointmentId}
+// Fields:
+//   - serviceId: string (required, max 50 chars)
+//   - barberId: string (required, max 50 chars)
+//   - userId: string (required, max 50 chars, immutable)
+//   - date: timestamp (required)
+//   - status: string (required, 'upcoming', 'completed', 'cancelled')
+//   - chatInitiated: boolean (optional)
+//
+// Collection: messages
+// Document ID: {messageId}
+// Fields:
+//   - appointmentId: string (required, max 50 chars)
+//   - senderId: string (required, max 50 chars)
+//   - text: string (optional, max 1000 chars)
+//   - type: string (required, 'text', 'image', 'file', 'voice')
+//   - fileUrl: string (optional, valid URL)
+//   - fileName: string (optional)
+//   - fileSize: number (optional)
+//   - duration: number (optional)
+//   - createdAt: timestamp (required)
+//
+// Collection: notifications
+// Document ID: {notificationId}
+// Fields:
+//   - userId: string (required, max 50 chars)
+//   - title: string (required, max 100 chars)
+//   - body: string (required, max 500 chars)
+//   - type: string (required, 'chat_started', 'new_message', 'system')
+//   - relatedId: string (optional, max 50 chars)
+//   - read: boolean (required)
+//   - createdAt: timestamp (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        (request.auth.token.email == "crizmc05@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    function isBarber() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'barber';
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+    
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+    
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function isValidUrl(url) {
+      return url is string &&
+        (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:.*"));
+    }
+    
+    function isValidOptionalUrl(field) {
+      return !(field in request.resource.data) || isValidUrl(request.resource.data[field]);
+    }
+    
+    function isPositive(field) {
+      return request.resource.data[field] is number && request.resource.data[field] >= 0;
+    }
+    
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['name', 'email', 'phone', 'role', 'avatar', 'createdAt', 'locationName', 'coordinates', 'availableTimes', 'availableDays', 'workingHours', 'blockedDates', 'fcmToken', 'isOnline']) &&
+             hasRequiredFields(['name', 'email', 'role']) &&
+             validStringLength('name', 1, 50) &&
+             isValidEmail(data.email) &&
+             isValidOptionalString('phone', 1, 20) &&
+             isValidOptionalUrl('avatar') &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('locationName' in data) || data.locationName is string) &&
+             (!('coordinates' in data) || (data.coordinates is map && 'lat' in data.coordinates && 'lng' in data.coordinates && data.coordinates.lat is number && data.coordinates.lng is number)) &&
+             (!('availableTimes' in data) || data.availableTimes is list) &&
+             (!('availableDays' in data) || (data.availableDays is list && data.availableDays.size() <= 7)) &&
+             (!('workingHours' in data) || (data.workingHours is map && 'start' in data.workingHours && 'end' in data.workingHours && data.workingHours.start is string && data.workingHours.end is string)) &&
+             (!('blockedDates' in data) || (data.blockedDates is list && data.blockedDates.size() <= 100)) &&
+             (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() <= 500)) &&
+             (!('isOnline' in data) || data.isOnline is bool) &&
+             data.role in ['admin', 'client', 'barber'];
+    }
+    
+    function isValidService(data) {
+      return hasOnlyAllowedFields(['name', 'description', 'price', 'durationMinutes', 'icon', 'createdAt', 'barberId', 'imageUrl']) &&
+             hasRequiredFields(['name', 'price', 'durationMinutes', 'icon', 'barberId']) &&
+             validStringLength('name', 1, 50) &&
+             isValidOptionalString('description', 0, 500) &&
+             isPositive('price') &&
+             isPositive('durationMinutes') &&
+             validStringLength('icon', 1, 50) &&
+             validStringLength('barberId', 1, 50) &&
+             (!('imageUrl' in data) || data.imageUrl is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+    
+    function isValidBarber(data) {
+      return hasOnlyAllowedFields(['name', 'avatar', 'rating', 'reviewCount', 'specialty', 'description', 'gallery', 'createdAt', 'locationName', 'coordinates', 'availableTimes', 'availableDays', 'workingHours', 'blockedDates', 'isOnline']) &&
+             hasRequiredFields(['name', 'avatar', 'rating', 'specialty']) &&
+             validStringLength('name', 1, 50) &&
+             isValidUrl(data.avatar) &&
+             data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+             (!('reviewCount' in data) || (data.reviewCount is number && data.reviewCount >= 0)) &&
+             validStringLength('specialty', 1, 100) &&
+             isValidOptionalString('description', 0, 1000) &&
+             (!('gallery' in data) || data.gallery is list) &&
+             (!('locationName' in data) || data.locationName is string) &&
+             (!('coordinates' in data) || (data.coordinates is map && 'lat' in data.coordinates && 'lng' in data.coordinates && data.coordinates.lat is number && data.coordinates.lng is number)) &&
+             (!('availableTimes' in data) || data.availableTimes is list) &&
+             (!('availableDays' in data) || (data.availableDays is list && data.availableDays.size() <= 7)) &&
+             (!('workingHours' in data) || (data.workingHours is map && 'start' in data.workingHours && 'end' in data.workingHours && data.workingHours.start is string && data.workingHours.end is string)) &&
+             (!('blockedDates' in data) || (data.blockedDates is list && data.blockedDates.size() <= 100)) &&
+             (!('isOnline' in data) || data.isOnline is bool) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+    
+    function isValidAppointment(data) {
+      return hasOnlyAllowedFields(['serviceId', 'barberId', 'userId', 'userName', 'userPhone', 'userAvatar', 'barberAvatar', 'date', 'status', 'createdAt', 'rating', 'review', 'chatInitiated']) &&
+             hasRequiredFields(['serviceId', 'barberId', 'userId', 'date', 'status']) &&
+             validStringLength('serviceId', 1, 50) &&
+             validStringLength('barberId', 1, 50) &&
+             validStringLength('userId', 1, 50) &&
+             isValidOptionalString('userName', 1, 50) &&
+             isValidOptionalString('userPhone', 1, 20) &&
+             isValidOptionalUrl('userAvatar') &&
+             isValidOptionalUrl('barberAvatar') &&
+             data.date is timestamp &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             data.status in ['upcoming', 'completed', 'cancelled'] &&
+             (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5)) &&
+             (!('review' in data) || (data.review is string && data.review.size() <= 500)) &&
+             (!('chatInitiated' in data) || data.chatInitiated is bool);
+    }
+
+    function isValidMessage(data) {
+      return hasOnlyAllowedFields(['appointmentId', 'senderId', 'text', 'createdAt', 'type', 'fileUrl', 'fileName', 'fileSize', 'duration']) &&
+             hasRequiredFields(['appointmentId', 'senderId', 'type', 'createdAt']) &&
+             validStringLength('appointmentId', 1, 100) &&
+             validStringLength('senderId', 1, 50) &&
+             data.type in ['text', 'image', 'file', 'voice'] &&
+             (!('text' in data) || data.text is string) &&
+             (!('fileUrl' in data) || isValidUrl(data.fileUrl)) &&
+             (!('fileName' in data) || data.fileName is string) &&
+             (!('fileSize' in data) || data.fileSize is number) &&
+             (!('duration' in data) || data.duration is number) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return hasOnlyAllowedFields(['userId', 'title', 'body', 'type', 'relatedId', 'read', 'createdAt']) &&
+             hasRequiredFields(['userId', 'title', 'body', 'type', 'read', 'createdAt']) &&
+             validStringLength('userId', 1, 50) &&
+             validStringLength('title', 1, 100) &&
+             validStringLength('body', 1, 500) &&
+             data.type in ['chat_started', 'new_message', 'appointment_created', 'appointment_reminder', 'system'] &&
+             (!('relatedId' in data) || validStringLength('relatedId', 1, 100)) &&
+             data.read is bool &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidReview(data) {
+      return hasOnlyAllowedFields(['barberId', 'userId', 'userName', 'userAvatar', 'rating', 'comment', 'createdAt', 'appointmentId']) &&
+             hasRequiredFields(['barberId', 'userId', 'rating', 'createdAt']) &&
+             validStringLength('barberId', 1, 50) &&
+             validStringLength('userId', 1, 50) &&
+             (!('userName' in data) || validStringLength('userName', 1, 50)) &&
+             (!('userAvatar' in data) || isValidOptionalUrl('userAvatar')) &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             (!('comment' in data) || validStringLength('comment', 1, 500)) &&
+             (!('appointmentId' in data) || validStringLength('appointmentId', 1, 50)) &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /reviews/{reviewId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAuthenticated() && isValidReview(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin() || isAuthenticated(); // Allow reading other users for chat
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    ((isOwner(userId) && request.resource.data.role in ['client', 'barber']) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+                    ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin() || (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline'])));
+      allow delete: if isAdmin();
+    }
+    
+    match /services/{serviceId} {
+      allow read: if true; // Publicly readable
+      allow create: if (isAdmin() || isBarber()) && isValidService(request.resource.data);
+      allow update: if (isAdmin() || isOwner(resource.data.barberId)) && isValidService(request.resource.data);
+      allow delete: if isAdmin() || isOwner(resource.data.barberId);
+    }
+    
+    match /barbers/{barberId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAuthenticated() && isValidBarber(request.resource.data) && 
+                    (request.auth.uid == barberId || isAdmin());
+      allow update: if isAuthenticated() && isValidBarber(request.resource.data) && 
+                    (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+                    (request.auth.uid == barberId || isAdmin() || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'reviewCount']) || (request.auth.uid == barberId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline'])));
+      allow delete: if isAdmin();
+    }
+    
+    match /appointments/{appointmentId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || request.auth.uid == resource.data.barberId || isAdmin());
+      allow create: if isAuthenticated() && isValidAppointment(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidAppointment(request.resource.data) && 
+                    request.resource.data.userId == resource.data.userId && // Immutable userId
+                    (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt) && // Immutable createdAt
+                    ((isOwner(resource.data.userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'rating', 'review', 'chatInitiated'])) || 
+                     (request.auth.uid == resource.data.barberId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'chatInitiated'])) || 
+                     isAdmin());
+      allow delete: if isAdmin();
+    }
+    
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && 
+                  (
+                    (exists(/databases/$(database)/documents/appointments/$(resource.data.appointmentId)) &&
+                    (get(/databases/$(database)/documents/appointments/$(resource.data.appointmentId)).data.userId == request.auth.uid ||
+                     get(/databases/$(database)/documents/appointments/$(resource.data.appointmentId)).data.barberId == request.auth.uid))
+                    ||
+                    (resource.data.appointmentId.matches(".*" + request.auth.uid + ".*"))
+                    ||
+                    isAdmin()
+                  );
+      allow create: if isAuthenticated() && isValidMessage(request.resource.data) && 
+                    request.resource.data.senderId == request.auth.uid &&
+                    (
+                      (exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)) &&
+                      (get(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)).data.userId == request.auth.uid ||
+                       get(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)).data.barberId == request.auth.uid))
+                      ||
+                      (request.resource.data.appointmentId.matches(".*" + request.auth.uid + ".*"))
+                    );
+      allow update: if false; // Messages are immutable
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.senderId == request.auth.uid);
+    }
+    
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
+      allow update: if isAuthenticated() && isValidNotification(request.resource.data) && 
+                    isOwner(resource.data.userId) && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAdmin() || isOwner(resource.data.userId);
+    }
+  }
+}

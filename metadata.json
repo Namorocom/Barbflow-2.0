@@ -1,0 +1,8 @@
+{
+  "name": "Barbflow",
+  "description": "Aplicativo móvel para agendamento em barbearia",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ]
+}
